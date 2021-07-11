@@ -2,6 +2,7 @@ from pos import Position
 from transposition import Table
 import copy as cp
 from gmpy2 import xmpz
+from sorter import MoveSorter
 
 
 class Solver:
@@ -75,14 +76,19 @@ class Solver:
         next_move = p.possible_non_losing()
         if next_move == 0:
             # If there are no possible moves, we lost next move
-            return -(Position.WIDTH * Position.HEIGHT - p.total_moves())
+            return -(Position.WIDTH * Position.HEIGHT - p.total_moves()) // 2
 
         # Check for draw
         if p.total_moves() >= Position.WIDTH * Position.HEIGHT - 2:
             return 0
 
+        en = self.trans_table.get(p.key())
+
         # Set lower bound for score
         min_score = -(Position.WIDTH * Position.HEIGHT - 2 - p.total_moves()) // 2
+        if en is not None and not en.is_up:
+            min_score = en.val
+
         if alpha < min_score:
             alpha = min_score
             if alpha >= beta:
@@ -90,32 +96,38 @@ class Solver:
 
         # Set upper bound for score
         max_score = (Position.WIDTH * Position.HEIGHT - 1 - p.total_moves()) // 2
-        val = self.trans_table.get(p.key())
-        if val != 0:
-            max_score = val
+        if en is not None and en.is_up:
+            max_score = en.val
 
         if beta > max_score:
-            # No need for us to set the beta larger than the max possible score
             beta = max_score
             if alpha >= beta:
                 return beta
 
-        # Compute all possible score
-        for x in range(0, Position.WIDTH):
-            if next_move & Position.column_mask(self.column_order[x]):
-                # Deep copy the position and create a new position to negamax
-                p2 = cp.deepcopy(p)
-                p2.play(self.column_order[x])
-                score = -self.negamax(p2, -beta, -alpha)
+        sorter = MoveSorter()
+        for i in range(Position.WIDTH - 1, -1, -1):
+            move = next_move & Position.column_mask(self.column_order[i])
+            if move != 0:
+                sorter.add(move, p.score_move(move))
 
-                # Alpha beta pruning checks
-                if score >= beta:
-                    return score
-                if score > alpha:
-                    alpha = score
+        tobe_move = sorter.get_next()
+        while tobe_move != 0:
+            # Deep copy the position and create a new position to negamax
+            p2 = cp.deepcopy(p)
+            p2.play_bit(tobe_move)
+            score = -self.negamax(p2, -beta, -alpha)
+
+            # Alpha beta pruning checks
+            if score >= beta:
+                # Save lower bound
+                self.trans_table.put(p.key(), score, False)
+                return score
+            if score > alpha:
+                alpha = score
+            tobe_move = sorter.get_next()
 
         # save the upperbound of the position
-        self.trans_table.put(p.key(), alpha)
+        self.trans_table.put(p.key(), alpha, True)
         return alpha
 
     def reset(self) -> None:

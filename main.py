@@ -8,7 +8,7 @@ def get_time():
 
 
 if __name__ == '__main__':
-    pos_seq = "763452543756455357732314"
+    pos_seq = "7265453"
 
     start = get_time()
 

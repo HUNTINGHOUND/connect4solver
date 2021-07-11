@@ -25,6 +25,8 @@ class Position:
 
     WIDTH = 7  # Width of the board
     HEIGHT = 6  # Height of the board
+    MIN_SCORE = -(WIDTH * HEIGHT) // 2 + 3
+    MAX_SCORE = (WIDTH * HEIGHT + 1) // 2 - 3
     assert WIDTH < 10, "Board's width must be less than 10"
     assert WIDTH * (HEIGHT + 1) <= 64, "Board does not fit a 64bits bitboard"
 
@@ -135,6 +137,18 @@ class Position:
 
         return v & (Position.board_mask ^ mask)
 
+    @staticmethod
+    def popcount(m) -> int:
+        """
+        Counts number of bit set to one in xmpz object
+        :param xmpz m: Object to be counted
+        """
+        c = 0
+        while m != 0:
+            m &= m - 1
+            c += 1
+        return c
+
     def key(self) -> xmpz:
         """
         :return: A compact representation of a position on WIDTH * (HEIGHT + 1) bits
@@ -155,8 +169,15 @@ class Position:
         :param int col: The column number indexed 0
         """
         # change the current position to opponent, then reflect the change on bit mask
+        self.play_bit((self.mask + self.bottom_mask_col(col)) & Position.column_mask(col))
+
+    def play_bit(self, move) -> None:
+        """
+        Plays a move represented with a bit map
+        :param xmpz move: Bit map representing the move
+        """
         self.current_position ^= self.mask
-        self.mask |= self.mask + self.bottom_mask_col(col)
+        self.mask |= move
         self.moves += 1
 
     def play_seq(self, seq) -> int:
@@ -237,4 +258,12 @@ class Position:
             else:
                 # Play the single forced moves
                 possible_mask = forced_moves
-        return possible_mask & ~(oppo_win >> 1);
+        return possible_mask & ~(oppo_win >> 1)
+
+    def score_move(self, move) -> int:
+        """
+        Score a possible move
+        :param xmpz move: Bit map representation
+        :return: The score
+        """
+        return Position.popcount(self.compute_winning_position(self.current_position | move, self.mask))

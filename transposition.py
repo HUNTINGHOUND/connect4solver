@@ -18,6 +18,7 @@ class Table:
             """
             self.key = 0
             self.val = 0
+            self.is_up = True
 
     def __init__(self, size):
         """
@@ -40,24 +41,26 @@ class Table:
         """
         self.T = [self.Entry() for each in range(self.size)]
 
-    def put(self, key, val) -> None:
+    def put(self, key, val, is_up) -> None:
         """
         Store a key value pair
         :param xmpz key: The key
         :param int val: The value
+        :param bool is_up: Indicate if entry stores upperBound
         """
         i = self.index(key)
         self.T[i].key = key
         self.T[i].val = val
+        self.T[i].is_up = is_up
 
     def get(self, key) -> int:
         """
-        Get the value of a key
+        Get the entry of a key
         :param xmpz key: The key
-        :return: value of the key, if the key does not exist, 0
+        :return: entry of the key, if the key does not exist, None
         """
         i = self.index(key)
         if self.T[i].key == key:
-            return self.T[i].val
+            return self.T[i]
         else:
-            return 0
+            return None
