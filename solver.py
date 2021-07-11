@@ -1,4 +1,5 @@
 from pos import Position
+from transposition import Table
 import copy as cp
 
 
@@ -9,6 +10,10 @@ class Solver:
 
     def __init__(self):
         self.column_order = [0] * Position.WIDTH
+        self.node_count = 0
+
+        # Transposition Table
+        self.trans_table = Table(8388593)
 
         # Initialize the column exploration order, starting from center columns.
         # Exploring the minimax tree this way allows us to prune more.
@@ -34,6 +39,8 @@ class Solver:
         :return: the score of a position
         """
 
+        self.node_count += 1
+
         if prev_col != -1:
             # Check if we won
             if p.is_winning(prev_col):
@@ -52,6 +59,11 @@ class Solver:
         if p.total_moves() == Position.WIDTH * Position.HEIGHT:
             return 0
 
+        # Check the transposition table
+        val = self.trans_table.get(p.key())
+        if val != -1:
+            return val
+
         # We want to maximize aka player 1 turn
         if is_max:
             max_eval = float('-inf')
@@ -68,6 +80,7 @@ class Solver:
                     if beta <= alpha:
                         break
 
+            self.trans_table.put(p.key(), max_eval)
             return max_eval
         # We want to minimize aka player 2 turn
         else:
@@ -84,4 +97,20 @@ class Solver:
                         beta = score
                     if beta <= alpha:
                         break
+
+            self.trans_table.put(p.key(), min_eval)
             return min_eval
+
+    def reset(self) -> None:
+        """
+        Reset the solver
+        """
+        self.node_count = 0
+        self.trans_table.reset()
+
+    def get_node_count(self) -> int:
+        """
+        Get the node count
+        :return: Node count
+        """
+        return self.node_count

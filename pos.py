@@ -99,6 +99,7 @@ class Position:
         Plays a playable column, should not be called on a non-playable column
         :param int col: The column number indexed 0
         """
+        # change the current position to opponent, then reflect the change on bit mask
         self.current_position ^= self.mask
         self.mask |= self.mask + self.bottom_mask(col)
         self.moves += 1
@@ -130,7 +131,7 @@ class Position:
         :return: Whether the given column will cause the current player to win
         """
         pos = cp.deepcopy(self.current_position)
-        pos |= (self.mask + self.bottom_mask(col)) & self.column_mask(col);
+        pos |= (self.mask + self.bottom_mask(col)) & self.column_mask(col)
         return self.alignment(pos);
 
     def total_moves(self) -> int:
