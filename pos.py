@@ -3,6 +3,19 @@ from gmpy2 import xmpz
 import copy as cp
 
 
+def bottom(width, height) -> xmpz:
+    """
+    Generate a bitmask containing 1 for the bottom slot of each column
+    :param int width:
+    :param int height:
+    :return: A bitmask containing 1 for the bottom slot of each column
+    """
+    if width == 0:
+        return 0
+    else:
+        return bottom(width - 1, height) | xmpz(1) << (width - 1) * (height + 1)
+
+
 class Position:
     """
     A class storing a Connect 4 position.
@@ -15,13 +28,17 @@ class Position:
     assert WIDTH < 10, "Board's width must be less than 10"
     assert WIDTH * (HEIGHT + 1) <= 64, "Board does not fit a 64bits bitboard"
 
+    # Static bitmaps
+    bottom_mask = bottom(WIDTH, HEIGHT)
+    board_mask = bottom_mask * ((xmpz(1) << HEIGHT) - 1)
+
     def __init__(self):
         # Bit representation of stones of the current player
-        self.current_position = xmpz(0)
+        self.current_position = xmpz()
         self.current_position[64] = 0
 
         # Bit mask that shows all positions in the board that is not empty
-        self.mask = xmpz(0)
+        self.mask = xmpz()
         self.mask[64] = 0
 
         # Number of moves played since the beginning of the game
@@ -36,7 +53,7 @@ class Position:
         return (xmpz(1) << (Position.HEIGHT - 1)) << col * (Position.HEIGHT + 1)
 
     @staticmethod
-    def bottom_mask(col) -> xmpz:
+    def bottom_mask_col(col) -> xmpz:
         """
         :param int col: The column number indexed 0
         :return: a bitmask containing a single 1 corresponding to the bottom cell of a given column
@@ -80,6 +97,44 @@ class Position:
 
         return False
 
+    @staticmethod
+    def compute_winning_position(position, mask) -> xmpz:
+        """
+        Compute all winning positions for the given position
+        :param position: Given player position
+        :param mask: Mask of the game
+        :return: A bitmask of winning positions
+        """
+
+        # Vertical
+        v = (position << 1) & (position << 2) & (position << 3)
+
+        # Horizontal
+        h = (position << (Position.HEIGHT + 1)) & (position << 2 * (Position.HEIGHT + 1))
+        v |= h & (position << 3 * (Position.HEIGHT + 1))
+        v |= h & (position >> (Position.HEIGHT + 1))
+        h >>= 3 * (Position.HEIGHT + 1)
+        v |= h & (position << (Position.HEIGHT + 1))
+        v |= h & (position >> 3 * (Position.HEIGHT + 1))
+
+        # Diagonal 1
+        h = (position << Position.HEIGHT) & (position << 2 * Position.HEIGHT)
+        v |= h & (position << 3 * Position.HEIGHT)
+        v |= h & (position >> Position.HEIGHT)
+        h >>= 3 * Position.HEIGHT
+        v |= h & (position << Position.HEIGHT)
+        v |= h & (position >> 3 * Position.HEIGHT)
+
+        # Diagonal 2
+        h = (position << (Position.HEIGHT + 2)) & (position << 2 * (Position.HEIGHT + 2))
+        v |= h & (position << 3 * (Position.HEIGHT + 2))
+        v |= h & (position >> (Position.HEIGHT + 2))
+        h >>= 3 * (Position.HEIGHT + 2)
+        v |= h & (position << (Position.HEIGHT + 2))
+        v |= h & (position >> 3 * (Position.HEIGHT + 2))
+
+        return v & (Position.board_mask ^ mask)
+
     def key(self) -> xmpz:
         """
         :return: A compact representation of a position on WIDTH * (HEIGHT + 1) bits
@@ -101,7 +156,7 @@ class Position:
         """
         # change the current position to opponent, then reflect the change on bit mask
         self.current_position ^= self.mask
-        self.mask |= self.mask + self.bottom_mask(col)
+        self.mask |= self.mask + self.bottom_mask_col(col)
         self.moves += 1
 
     def play_seq(self, seq) -> int:
@@ -130,9 +185,7 @@ class Position:
         :param int col: Column number indexed 0
         :return: Whether the given column will cause the current player to win
         """
-        pos = cp.deepcopy(self.current_position)
-        pos |= (self.mask + self.bottom_mask(col)) & self.column_mask(col)
-        return self.alignment(pos);
+        return self.winning_position() & self.possible() & self.bottom_mask_col(col)
 
     def total_moves(self) -> int:
         """
@@ -140,3 +193,48 @@ class Position:
         :return: The number of moves since the beginning of the game
         """
         return self.moves
+
+    def possible(self) -> xmpz:
+        """
+        :return: A bit map of all possible moves
+        """
+        return (self.mask + self.bottom_mask) & Position.board_mask
+
+    def opponent_winning_position(self) -> xmpz:
+        """
+        :return: Return a bitmask of the possible winning positions for the opponent
+        """
+        # Pass in opponent's position
+        return Position.compute_winning_position(self.current_position ^ self.mask, self.mask)
+
+    def winning_position(self) -> xmpz:
+        """
+        :return: A bitmask of the possible winning position for the current player
+        """
+        return Position.compute_winning_position(self.current_position, self.mask)
+
+    def can_win_next(self) -> bool:
+        """
+        :return: True if current player can win next move
+        """
+        return self.winning_position() & self.possible()
+
+    def possible_non_losing(self) -> xmpz:
+        """
+        :return: A bit map of all the possible next moves that do not lose in one turn.
+        A losing move is a move leaving the possibility for the opponent to win directly.
+        """
+        assert not self.can_win_next()
+        possible_mask = self.possible()
+        oppo_win = self.opponent_winning_position()
+        forced_moves = possible_mask & oppo_win
+
+        if forced_moves != 0:
+            # Check if there is more than 1 forced move
+            if forced_moves & (forced_moves - 1) != 0:
+                # The opponent has two winning moves
+                return 0
+            else:
+                # Play the single forced moves
+                possible_mask = forced_moves
+        return possible_mask & ~(oppo_win >> 1);

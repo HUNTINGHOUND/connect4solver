@@ -1,6 +1,7 @@
 from pos import Position
 from transposition import Table
 import copy as cp
+from gmpy2 import xmpz
 
 
 class Solver:
@@ -20,86 +21,102 @@ class Solver:
         for i in range(0, Position.WIDTH):
             self.column_order[i] = int(Position.WIDTH // 2 + (1 - 2 * (i % 2)) * (i + 1) // 2)
 
-    def minimax(self, p, is_max=True, prev_col=-1, alpha=float('-inf'), beta=float('inf')) -> int:
+    def solve(self, p) -> int:
         """
-        Recursively solve a connect 4 position using min-max with alpha beta pruning.
+        Solve a position using null-depth window
+        :param Position p: The position
+        :return:The score of the position
+        """
+        if p.can_win_next():
+            # Check for win in one move
+            return (Position.WIDTH * Position.HEIGHT + 1 - p.total_moves()) // 2
+
+        # Define the maximum and minimum score (If we win immediately)
+        min_score = -(Position.WIDTH * Position.HEIGHT - p.total_moves()) // 2
+        max_score = (Position.WIDTH * Position.HEIGHT + 1 - p.total_moves()) // 2
+
+        while min_score < max_score:
+            med = min_score + (max_score - min_score) // 2
+
+            if 0 >= med > min_score // 2:
+                med = min_score // 2
+            elif 0 <= med < max_score // 2:
+                med = max_score // 2
+
+            # Use a null depth window
+            r = self.negamax(p, alpha=med, beta=med + 1)
+            if r <= med:
+                max_score = r
+            else:
+                min_score = r
+
+        return min_score
+
+    def negamax(self, p, alpha=float('-inf'), beta=float('inf')) -> int:
+        """
+        Recursively solve a connect 4 position using negamax with alpha beta pruning.
         Meaning of score:
 
         - 0 for a draw
-        - Positive score for forced win for player 1. Score is the number of moves before theoretical draw.
-        - Negative score for forced win for player 2. Score is the number of moves before theoretical draw.
+        - Positive score for forced win for current player. Score is the number of moves before theoretical draw.
+        - Negative score for forced lose for current player. Score is the number of moves before theoretical draw.
 
         Generally, higher/lower the score, quicker the win and bigger the advantage.
 
         :param Position p: The given position
-        :param boolean is_max: Indicate to maximize or minimize
-        :param int prev_col: Previously played column indexed 0
         :param int alpha: Alpha value for alpha beta pruning
         :param int beta: Beta value for alpha beta pruning
         :return: the score of a position
         """
-
+        assert alpha < beta
+        assert not p.can_win_next()
         self.node_count += 1
 
-        if prev_col != -1:
-            # Check if we won
-            if p.is_winning(prev_col):
-                # Player 1 won
-                if p.total_moves() % 2 == 0:
-                    # Return the score: 22 - number of moves made by player 1
-                    return (Position.HEIGHT * Position.WIDTH) / 2 + 1 - ((p.total_moves() + 1) // 2 + 1)
-                # Player 2 won
-                else:
-                    # Return the score: number of moves made by player 2 - 22
-                    return (p.total_moves() // 2 + 1) - ((Position.HEIGHT * Position.WIDTH) / 2 + 1)
+        next_move = p.possible_non_losing()
+        if next_move == 0:
+            # If there are no possible moves, we lost next move
+            return -(Position.WIDTH * Position.HEIGHT - p.total_moves())
 
-            p.play(prev_col)
-
-        # Check if we drew
-        if p.total_moves() == Position.WIDTH * Position.HEIGHT:
+        # Check for draw
+        if p.total_moves() >= Position.WIDTH * Position.HEIGHT - 2:
             return 0
 
-        # Check the transposition table
+        # Set lower bound for score
+        min_score = -(Position.WIDTH * Position.HEIGHT - 2 - p.total_moves()) // 2
+        if alpha < min_score:
+            alpha = min_score
+            if alpha >= beta:
+                return alpha
+
+        # Set upper bound for score
+        max_score = (Position.WIDTH * Position.HEIGHT - 1 - p.total_moves()) // 2
         val = self.trans_table.get(p.key())
-        if val != -1:
-            return val
+        if val != 0:
+            max_score = val
 
-        # We want to maximize aka player 1 turn
-        if is_max:
-            max_eval = float('-inf')
-            for col in range(0, Position.WIDTH):
-                if p.can_play(self.column_order[col]):
-                    p2 = cp.deepcopy(p)
-                    score = self.minimax(p2, False, self.column_order[col], alpha, beta)
+        if beta > max_score:
+            # No need for us to set the beta larger than the max possible score
+            beta = max_score
+            if alpha >= beta:
+                return beta
 
-                    # Keep track of max score and pruning unnecessary searches
-                    if max_eval < score:
-                        max_eval = score
-                    if alpha < score:
-                        alpha = score
-                    if beta <= alpha:
-                        break
+        # Compute all possible score
+        for x in range(0, Position.WIDTH):
+            if next_move & Position.column_mask(self.column_order[x]):
+                # Deep copy the position and create a new position to negamax
+                p2 = cp.deepcopy(p)
+                p2.play(self.column_order[x])
+                score = -self.negamax(p2, -beta, -alpha)
 
-            self.trans_table.put(p.key(), max_eval)
-            return max_eval
-        # We want to minimize aka player 2 turn
-        else:
-            min_eval = float('inf')
-            for col in range(0, Position.WIDTH):
-                if p.can_play(self.column_order[col]):
-                    p2 = cp.deepcopy(p)
-                    score = self.minimax(p2, True, self.column_order[col], alpha, beta)
+                # Alpha beta pruning checks
+                if score >= beta:
+                    return score
+                if score > alpha:
+                    alpha = score
 
-                    # Keep track of min score and pruning unnecessary searches
-                    if min_eval > score:
-                        min_eval = score
-                    if beta > score:
-                        beta = score
-                    if beta <= alpha:
-                        break
-
-            self.trans_table.put(p.key(), min_eval)
-            return min_eval
+        # save the upperbound of the position
+        self.trans_table.put(p.key(), alpha)
+        return alpha
 
     def reset(self) -> None:
         """

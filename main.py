@@ -8,7 +8,7 @@ def get_time():
 
 
 if __name__ == '__main__':
-    pos_seq = "3455565261655364217"
+    pos_seq = "763452543756455357732314"
 
     start = get_time()
 
@@ -16,7 +16,7 @@ if __name__ == '__main__':
     pos.play_seq(pos_seq)
     is_max = (pos.total_moves() % 2 == 0)
     s = Solver()
-    score = s.minimax(pos, is_max)
+    score = s.solve(pos)
 
     done = get_time()
     interval = done - start

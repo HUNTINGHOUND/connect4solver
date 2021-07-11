@@ -60,4 +60,4 @@ class Table:
         if self.T[i].key == key:
             return self.T[i].val
         else:
-            return -1
+            return 0
